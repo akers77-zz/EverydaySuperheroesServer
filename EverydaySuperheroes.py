@@ -10,6 +10,7 @@ app.secret_key = "\xf3rh\xf7\x86\xfb\x0e\xd8\xc1E\xa3\xdf\xfar\xdf2\x05\xd3CR\xf
 
 acceptJobAttributes = ["job"]
 locationAttributes = ["latitude", "longitude"]
+loginAttributes = ["email", "password"]
 newJobAttributes = ["description", "latitude", "longitude", "name", "type"]
 userRegisterAttributes = ["email", "name", "password"]
 
@@ -35,25 +36,27 @@ def get_current_user():
 
 @app.route("/createjob", methods=["POST"])
 def createjob():
-    login_required()
+    #login_required()
 
     if not requiredAttributes(newJobAttributes):
         abort(404, attributesErrorMessage)
 
+    json = request.get_json()
+
     try:
-        activejobs = Job.select().where((Job.requester == session["user_id"]) & (Job.completed == False)).get()
+        activejobs = Job.select().where((Job.requester == 2) & (Job.completed == False)).get()
         abort(404, "Cannot create job - user already has an active job!")
     except Job.DoesNotExist:
         job = Job.create(accepted=False,
                              acceptor=None,
                              completed=False,
                              date=datetime.now(),
-                             description=request.form["description"],
-                             latitude=request.form["latitude"],
-                             longitude=request.form["longitude"],
-                             name=request.form["name"],
-                             requester=session["user_id"],
-                             type=request.form["type"]
+                             description=json["description"],
+                             latitude=json["latitude"],
+                             longitude=json["longitude"],
+                             name=json["name"],
+                             requester=2,
+                             type=json["type"]
                              )
         job.save()
 
@@ -67,42 +70,19 @@ def location_update():
     if not requiredAttributes(locationAttributes):
         abort(404, attributesErrorMessage)
 
+    json = request.get_json()
+
     try:
         previousLocation = UserLocation.get(UserLocation.user == session["user_id"])
-        previousLocation.latitude = request.form["latitude"]
-        previousLocation.longitude = request.form["longitude"]
+        previousLocation.latitude = json["latitude"]
+        previousLocation.longitude = json["longitude"]
         previousLocation.save()
     except UserLocation.DoesNotExist:
         location = UserLocation.create(user=session["user_id"],
-                                       latitude=request.form["latitude"],
-                                       longitude=request.form["longitude"],
+                                       latitude=json["latitude"],
+                                       longitude=json["longitude"],
                                        time=datetime.now())
         location.save()
-
-    return success
-
-
-
-@app.route("/acceptjob", methods=["POST"])
-def accept_job():
-    login_required()
-
-    if not requiredAttributes(acceptJobAttributes):
-        abort(404, attributesErrorMessage)
-
-    job = get_object_or_404(Job, Job.id == request.form["job"])
-    if job.requester == session["user_id"]:
-        abort(404, "Cannot accept your own job!")
-
-    try:
-        acceptedJobs = Job.get(Job.acceptor == session["user_id"])
-        abort(404, "User has already selected a job - cannot accept another!")
-    except Job.DoesNotExist:
-        person = get_object_or_404(User, User.id == session["user_id"])
-
-        job.accepted = True
-        job.acceptor = person
-        job.save()
 
     return success
 
@@ -121,15 +101,17 @@ def register_user():
     if not requiredAttributes(userRegisterAttributes):
         abort(404, attributesErrorMessage)
 
+    json = request.get_json()
+
     try:
-        registeredUser = User.get(User.email == request.form["email"])
+        registeredUser = User.get(User.email == json["email"])
         abort(404, "Email address already in use!")
 
     except User.DoesNotExist:
-        password = request.form['password'].encode('utf-8')
+        password = json['password'].encode('utf-8')
         encryptedPassword = bcrypt.hashpw(password, bcrypt.gensalt())
 
-        user = User.create(email=request.form["email"], name=request.form["name"], password=encryptedPassword)
+        user = User.create(email=json["email"], name=json["name"], password=encryptedPassword)
         user.save()
 
         auth_user(user)
@@ -138,22 +120,24 @@ def register_user():
 
 @app.route('/login', methods=['POST'])
 def login():
-    if request.form['email']:
-        try:
-            user = User.get(email=request.form['email'])
-        except User.DoesNotExist:
-            abort(404, "The username or password is incorrect")
+    if not requiredAttributes(loginAttributes):
+        abort(404, attributesErrorMessage)
 
-        password = request.form['password'].encode('utf-8')
-        userPassword = user.password.encode('utf-8')
+    json = request.get_json()
 
-        if bcrypt.hashpw(password, userPassword) != userPassword:
-            abort(404, "The email or password is incorrect")
-        else:
-            auth_user(user)
-            return success
+    try:
+        user = User.get(email=json['email'])
+    except User.DoesNotExist:
+        abort(404, "The username or password is incorrect")
+
+    password = json['password'].encode('utf-8')
+    userPassword = user.password.encode('utf-8')
+
+    if bcrypt.hashpw(password, userPassword) != userPassword:
+        abort(404, "The email or password is incorrect")
     else:
-        abort(404, "No email address supplied!")
+        auth_user(user)
+        return success
 
 
 @app.route('/logout/')
@@ -162,8 +146,10 @@ def logout():
     return success
 
 def requiredAttributes(requiredattributes):
+    json = request.get_json()
+
     for attribute in requiredattributes:
-        if not attribute in request.form:
+        if not attribute in json:
             return False
 
     return True
