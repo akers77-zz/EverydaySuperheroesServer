@@ -149,7 +149,7 @@ def get_job_info():
 
     try:
         #job = Job.select().where(Job.id == json["job"] & (Job.attendee == session["user_id"] | Job.requester == session["user_id"])).get()
-        job = Job.select().where(Job.id == args["jobid"]).get()
+        job = Job.get(Job.id == args['jobid'])
     except Job.DoesNotExist:
         abort(404, "No such job exists!")
 
