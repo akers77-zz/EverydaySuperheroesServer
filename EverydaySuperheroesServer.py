@@ -6,48 +6,27 @@ from datetime import datetime
 from datamodels.Models import *
 
 app = Flask(__name__)
-app.secret_key = "\xf3rh\xf7\x86\xfb\x0e\xd8\xc1E\xa3\xdf\xfar\xdf2\x05\xd3CR\xf2C\x95\xef"
 
-jobAttribute = ["jobid"]
-locationAttributes = ["latitude", "longitude"]
-loginAttributes = ["email", "password"]
-newJobAttributes = ["description", "latitude", "longitude", "name", "type"]
+jobAttributes = ["jobid", "userid"]
+userIdAttribute = ["userid"]
+locationAttributes = ["jobid", "latitude", "longitude"]
+newJobAttributes = ["user","description", "latitude", "longitude", "name", "type"]
 userRegisterAttributes = ["email", "name", "password"]
 
 attributesErrorMessage = "Not all attributes supplied!"
 
 success = json.dumps({'success':True}), 200, {'ContentType':'application/json'}
 
-def login_required():
-    if not "logged_in" in session.keys():
-        abort(404, "Not logged in!")
-
-
-def auth_user(user):
-    session['logged_in'] = True
-    session['user_id'] = user.id
-    session['name'] = user.name
-
-
-def get_current_user():
-    if session.get('logged_in'):
-        return User.get(User.id == session['user_id'])
-
 
 @app.route("/createjob", methods=["POST"])
 def createjob():
-    #login_required()
-
     if not requiredAttributes(newJobAttributes, request.get_json()):
         abort(404, attributesErrorMessage)
 
     json = request.get_json()
 
-    nextRequester = Job.select().count() + 1
+    activejobs = Job.select().where((Job.requester_id == json["userid"]) & (not Job.completed))
 
-    activejobs = Job.select().where((Job.requester_id == nextRequester) & (not Job.completed))
-
-    #Should only ever be 0 or 1
     getJobIds = [job.id for job in activejobs]
     if len(getJobIds) > 0:
         abort(404, "Cannot create job - user already has an active job!")
@@ -60,7 +39,7 @@ def createjob():
                          latitude=json["latitude"],
                          longitude=json["longitude"],
                          name=json["name"],
-                         requester=nextRequester,
+                         requester=json["userid"],
                          type=json["type"]
                          )
     job.save()
@@ -70,46 +49,47 @@ def createjob():
 
 @app.route("/updatelocation", methods=["POST"])
 def update_location():
-    login_required()
-
     if not requiredAttributes(locationAttributes, request.get_json()):
         abort(404, attributesErrorMessage)
 
     json = request.get_json()
 
     try:
-        previousLocation = UserLocation.get(UserLocation.user == session["user_id"])
-        previousLocation.latitude = json["latitude"]
-        previousLocation.longitude = json["longitude"]
-        previousLocation.save()
-    except UserLocation.DoesNotExist:
-        location = UserLocation.create(user=session["user_id"],
-                                       latitude=json["latitude"],
-                                       longitude=json["longitude"],
-                                       time=datetime.now())
-        location.save()
+        job = Job.get(Job.id == json["jobid"])
+
+        try:
+            previousLocation = UserLocation.get(UserLocation.user == job.attendee_id)
+            previousLocation.latitude = json["latitude"]
+            previousLocation.longitude = json["longitude"]
+            previousLocation.save()
+        except UserLocation.DoesNotExist:
+            location = UserLocation.create(user=json["userid"],
+                                           latitude=json["latitude"],
+                                           longitude=json["longitude"],
+                                           time=datetime.now())
+            location.save()
+    except Job.DoesNotExist:
+        abort(404, "Job does not exist")
 
     return success
 
 
 @app.route('/acceptjob', methods=['POST'])
 def accept_job():
-    login_required()
-
-    if not requiredAttributes(jobAttribute, request.get_json()):
+    if not requiredAttributes(jobAttributes, request.get_json()):
         abort(404, attributesErrorMessage)
 
     json = request.get_json()
 
     job = get_object_or_404(Job, Job.id == json['jobid'])
-    if job.requester == session["user_id"]:
+    if job.requester == json["userid"]:
         abort(404, "You cannot accept your own job!")
 
     try:
-        acceptedJobs = Job.get(Job.attendee == session["user_id"])
+        acceptedJobs = Job.get(Job.attendee == json["userid"])
         abort(404, "User has already selected a job - cannot accept another")
     except Job.DoesNotExist:
-        person = get_object_or_404(User, User.id == session["user_id"])
+        person = get_object_or_404(User, User.id == json["userid"])
 
         job.accepted = True
         job.attendee = person
@@ -120,9 +100,7 @@ def accept_job():
 
 @app.route("/getattendeelocation", methods=['GET'])
 def get_attendee_location():
-    #login_required()
-
-    if not requiredAttributes(jobAttribute, request.args):
+    if not requiredAttributes(jobAttributes, request.args):
         abort(404, attributesErrorMessage)
 
     try:
@@ -140,15 +118,12 @@ def get_attendee_location():
 
 @app.route("/getjobinfo", methods=["GET"])
 def get_job_info():
-    #login_required()
-
-    if not requiredAttributes(jobAttribute, request.args):
+    if not requiredAttributes(jobAttributes, request.args):
         abort(404, attributesErrorMessage)
 
     args = request.args
 
     try:
-        #job = Job.select().where(Job.id == json["job"] & (Job.attendee == session["user_id"] | Job.requester == session["user_id"])).get()
         job = Job.get(Job.id == args['jobid'])
     except Job.DoesNotExist:
         abort(404, "No such job exists!")
@@ -159,23 +134,22 @@ def get_job_info():
 
 @app.route("/getuserjob", methods=["GET"])
 def get_user_job():
-    login_required()
+    if not requiredAttributes(userIdAttribute, request.args):
+        abort(404, attributesErrorMessage)
 
-    job = Job.select().where(Job.requester == session["user_id"] & Job.completed == False).get()
+    job = Job.select().where(Job.requester == request.args['userid'] & Job.completed == False).get()
 
     return jsonify(job=job.id)
 
 
 @app.route("/isattended", methods=["GET"])
 def isattended():
-    login_required()
-
-    if not requiredAttributes(jobAttribute, request.args):
+    if not requiredAttributes(jobAttributes, request.args):
         abort(404, attributesErrorMessage)
 
     args = request.args
 
-    job = Job.select().where((Job.requester_id == session["user_id"] | Job.attendee_id == session["user_id"])
+    job = Job.select().where((Job.requester_id == args["userid"] | Job.attendee_id == args["userid"])
                              & Job.id == args["jobid"])
 
     return jsonify(attended=job.attended, completed=job.completed)
@@ -199,36 +173,7 @@ def register_user():
         user = User.create(email=requestjson["email"], name=requestjson["name"], password=encryptedpassword)
         user.save()
 
-        auth_user(user)
         return success
-
-
-@app.route('/login', methods=['POST'])
-def login():
-    if not requiredAttributes(loginAttributes, request.get_json()):
-        abort(404, attributesErrorMessage)
-
-    requestjson = request.get_json()
-
-    try:
-        user = User.get(email=requestjson['email'])
-    except User.DoesNotExist:
-        abort(404, "The username or password is incorrect")
-
-    password = requestjson['password'].encode('utf-8')
-    userPassword = user.password.encode('utf-8')
-
-    if bcrypt.hashpw(password, userPassword) != userPassword:
-        abort(404, "The email or password is incorrect")
-    else:
-        auth_user(user)
-        return success
-
-
-@app.route('/logout/')
-def logout():
-    session.pop('logged_in', None)
-    return success
 
 
 def requiredAttributes(attributes, dictionary):
