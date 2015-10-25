@@ -1,6 +1,6 @@
 from peewee import *
 
-database = "/tmp/EverydaySuperheroes.db"
+database = "/tmp/EverydaySuperheroesServer.db"
 db = SqliteDatabase(database, threadlocals="true")
 
 
@@ -19,13 +19,14 @@ class User(BaseModel):
 
 class Job(BaseModel):
     accepted = BooleanField()
-    acceptor = ForeignKeyField(User, related_name="acceptor", null=True)
-    completed = BooleanField
+    attendee = ForeignKeyField(User, related_name="acceptor", null=True)
+    completed = BooleanField()
     date = DateTimeField()
     description = CharField()
     id = PrimaryKeyField()
     latitude = CharField()
     longitude = CharField()
+    name = CharField()
     type = CharField()
     requester = ForeignKeyField(User, related_name="requester")
 

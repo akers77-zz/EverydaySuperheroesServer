@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/EverydaySuperheroes.iml" filepath="$PROJECT_DIR$/.idea/EverydaySuperheroes.iml" />
+      <module fileurl="file://$USER_HOME$/PycharmProjects/EverydaySuperheroesServer/.idea/EverydaySuperheroesServer.iml" filepath="$USER_HOME$/PycharmProjects/EverydaySuperheroesServer/.idea/EverydaySuperheroesServer.iml" />
     </modules>
   </component>
 </project>
